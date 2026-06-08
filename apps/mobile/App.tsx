@@ -7,7 +7,7 @@ import type { Conversation, FeedBundle, MediaAsset, Notification, Post, Profile 
 import { mobileRepository, supabase } from './src/lib/supabase';
 
 type Tab = 'home' | 'search' | 'create' | 'activity' | 'profile';
-type SessionLike = { user?: { email?: string } } | null;
+type SessionLike = { user?: { id?: string; email?: string } } | null;
 type LoadState = 'idle' | 'loading' | 'refreshing' | 'error';
 type FeedMode = 'forYou' | 'following';
 type PickedAsset = ImagePicker.ImagePickerAsset & { uploaded?: MediaAsset };
@@ -26,20 +26,40 @@ export default function App() {
     setProfile(nextProfile);
   }, []);
 
+  const applyAuthenticatedSession = useCallback(async (candidateSession: SessionLike) => {
+    if (!candidateSession) {
+      setSession(null);
+      setProfile(null);
+      return;
+    }
+
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      setSession(null);
+      setProfile(null);
+      await mobileRepository.signOut().catch(() => undefined);
+      return;
+    }
+
+    setSession({ ...candidateSession, user: { ...candidateSession.user, id: data.user.id, email: data.user.email ?? candidateSession.user?.email } });
+    await refreshProfile();
+  }, [refreshProfile]);
+
   useEffect(() => {
     mobileRepository.getSession().then(async ({ data }: { data: { session: SessionLike } }) => {
-      setSession(data.session);
-      if (data.session) await refreshProfile();
+      await applyAuthenticatedSession(data.session);
       setAuthLoading(false);
-    }).catch(() => setAuthLoading(false));
+    }).catch(() => {
+      setSession(null);
+      setProfile(null);
+      setAuthLoading(false);
+    });
 
     const { data } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      setSession(nextSession as SessionLike);
-      if (nextSession) await refreshProfile();
-      else setProfile(null);
+      await applyAuthenticatedSession(nextSession as SessionLike);
     });
     return () => data.subscription.unsubscribe();
-  }, [refreshProfile]);
+  }, [applyAuthenticatedSession]);
 
   const screen = useMemo(() => {
     if (!session) return <AuthScreen loading={authLoading} />;
