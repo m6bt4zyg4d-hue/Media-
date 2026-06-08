@@ -28,6 +28,7 @@ export interface Profile {
   followersCount: number;
   followingCount: number;
   postsCount: number;
+  usernameLastChangedAt?: string;
 }
 
 export interface MediaAsset {
@@ -55,6 +56,8 @@ export interface Post {
   repostCount: number;
   bookmarkCount: number;
   moderationStatus: ModerationStatus;
+  likedByMe?: boolean;
+  repostedByMe?: boolean;
 }
 
 export interface Story {
@@ -103,6 +106,24 @@ export interface Report {
   reason: string;
   status: ReportStatus;
   createdAt: string;
+}
+
+export interface DashboardMetrics {
+  openReports: number;
+  activeBans: number;
+  pendingModeration: number;
+  activeAds: number;
+}
+
+export interface SponsoredPost {
+  id: string;
+  postId: string;
+  sponsorName: string;
+  status: 'draft' | 'active' | 'paused' | 'ended';
+  startsAt: string;
+  endsAt?: string;
+  pinned: boolean;
+  budgetCents: number;
 }
 
 export interface SupportTicket {
