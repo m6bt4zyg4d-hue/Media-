@@ -5,7 +5,7 @@ create extension if not exists "citext";
 
 create type app_role as enum ('owner', 'admin', 'moderator', 'support', 'user');
 create type visibility as enum ('public', 'followers', 'private');
-create type post_type as enum ('text', 'image', 'video', 'quote');
+create type post_type as enum ('text', 'image', 'video', 'mixed', 'quote');
 create type media_type as enum ('image', 'video', 'audio');
 create type moderation_status as enum ('pending', 'approved', 'rejected', 'escalated');
 create type report_status as enum ('open', 'reviewing', 'resolved', 'dismissed');
@@ -357,6 +357,13 @@ join public.profiles pr on pr.id = p.author_id
 left join public.post_media pm on pm.post_id = p.id
 left join public.media m on m.id = pm.media_id
 group by p.id, pr.id;
+
+
+create view public.bookmark_feed as
+select pf.*, b.user_id as bookmarked_by, b.created_at as bookmarked_at
+from public.bookmarks b
+join public.post_feed pf on pf.id = b.post_id
+where b.user_id = auth.uid();
 
 create view public.story_feed as
 select

@@ -1,9 +1,17 @@
 'use client';
 
+import Link from 'next/link';
+import { MoreHorizontal } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 
 export function AccountMenu() {
   const { profile, session, signOut } = useAuth();
-  if (!session) return <a className="primary" href="/auth" style={{ display: 'block', textAlign: 'center', marginTop: 20 }}>Log in</a>;
-  return <div className="panel" style={{ borderRadius: 20, marginTop: 20 }}><strong>{profile?.displayName ?? session.user.email}</strong><p className="muted">@{profile?.username ?? 'profile'}</p><button className="ghost" onClick={() => void signOut()}>Log out</button></div>;
+  if (!session) return <Link className="x-login-button" href="/auth">Log in</Link>;
+  return (
+    <button className="x-account-switcher" onClick={() => void signOut()} title="Log out">
+      {profile?.avatarUrl ? <img className="x-avatar" src={profile.avatarUrl} alt="" /> : <span className="x-avatar" />}
+      <span className="x-account-copy"><strong>{profile?.displayName ?? session.user.email}</strong><small>@{profile?.username ?? 'profile'}</small></span>
+      <MoreHorizontal size={20} />
+    </button>
+  );
 }

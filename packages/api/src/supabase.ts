@@ -1,5 +1,5 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { Conversation, FeedBundle, Message, Notification, Post, Profile, Report, Story, SupportTicket } from '@media/types';
+import { createClient } from '@supabase/supabase-js';
+import type { Conversation, FeedBundle, MediaAsset, Message, Notification, Post, Profile, Report, Story, SupportTicket } from '@media/types';
 
 export interface MediaApiConfig {
   supabaseUrl: string;
@@ -7,7 +7,7 @@ export interface MediaApiConfig {
   options?: Parameters<typeof createClient>[2];
 }
 
-export function createMediaClient(config: MediaApiConfig): SupabaseClient {
+export function createMediaClient(config: MediaApiConfig): any {
   return createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     ...config.options
@@ -32,7 +32,7 @@ export interface ProfileUpdateInput {
 }
 
 export class MediaRepository {
-  constructor(private readonly client: SupabaseClient) {}
+  constructor(private readonly client: any) {}
 
   signUp(input: SignUpInput) {
     return this.client.auth.signUp({
@@ -61,13 +61,37 @@ export class MediaRepository {
   async getMyProfile(): Promise<Profile | null> {
     const { data: user } = await this.client.auth.getUser();
     if (!user.user) return null;
-    const { data } = await this.client.from('profiles').select('*').eq('id', user.user.id).maybeSingle();
-    return data ? mapProfile(data) : null;
+    const [{ data: profile }, { data: account }] = await Promise.all([
+      this.client.from('profiles').select('*').eq('id', user.user.id).maybeSingle(),
+      this.client.from('users').select('role').eq('id', user.user.id).maybeSingle()
+    ]);
+    return profile ? mapProfile({ ...profile, role: account?.role ?? 'user' }) : null;
   }
 
   async getProfile(username: string): Promise<Profile | null> {
     const { data } = await this.client.from('profiles').select('*').eq('username', username).maybeSingle();
     return data ? mapProfile(data) : null;
+  }
+
+  async searchProfiles(query: string): Promise<Profile[]> {
+    if (!query.trim()) return [];
+    const { data } = await this.client
+      .from('profiles')
+      .select('*')
+      .or(`username.ilike.%${query}%,display_name.ilike.%${query}%,bio.ilike.%${query}%`)
+      .limit(20);
+    return (data ?? []).map(mapProfile);
+  }
+
+  async searchPosts(query: string): Promise<Post[]> {
+    if (!query.trim()) return [];
+    const { data } = await this.client
+      .from('post_feed')
+      .select('*')
+      .ilike('body', `%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    return (data ?? []).map(mapPostFeedRow);
   }
 
   async updateProfile(input: ProfileUpdateInput) {
@@ -102,18 +126,37 @@ export class MediaRepository {
     return (data ?? []).map(mapPostFeedRow);
   }
 
-  async createPost(input: { body: string; mediaIds?: string[]; quotePostId?: string }) {
+  async createPost(input: { body: string; mediaIds?: string[]; quotePostId?: string; mediaType?: 'image' | 'video' | 'mixed' }) {
     const { data: user } = await this.client.auth.getUser();
     const { data, error } = await this.client.from('posts').insert({
       author_id: user.user?.id,
       body: input.body,
       quote_post_id: input.quotePostId,
-      post_type: input.quotePostId ? 'quote' : input.mediaIds?.length ? 'image' : 'text',
+      post_type: input.quotePostId ? 'quote' : input.mediaIds?.length ? input.mediaType ?? 'image' : 'text',
       moderation_status: 'pending'
     }).select().single();
     if (error || !data || !input.mediaIds?.length) return { data, error };
     await this.client.from('post_media').insert(input.mediaIds.map((mediaId, position) => ({ post_id: data.id, media_id: mediaId, position })));
     return { data, error };
+  }
+
+  async updateOwnPost(postId: string, body: string) {
+    const { data: user } = await this.client.auth.getUser();
+    return this.client.from('posts').update({ body, updated_at: new Date().toISOString() }).eq('id', postId).eq('author_id', user.user?.id);
+  }
+
+  async uploadMedia(file: File, altText?: string): Promise<{ data: MediaAsset | null; error: { message: string } | null }> {
+    const { data: user } = await this.client.auth.getUser();
+    if (!user.user) return { data: null, error: { message: 'Log in to upload media.' } };
+    const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+    const extension = file.name.split('.').pop() || (mediaType === 'video' ? 'mp4' : 'jpg');
+    const storagePath = `${user.user.id}/${crypto.randomUUID()}.${extension}`;
+    const uploaded = await this.client.storage.from('media').upload(storagePath, file, { contentType: file.type, upsert: false });
+    if (uploaded.error) return { data: null, error: uploaded.error };
+    const { data: publicUrl } = this.client.storage.from('media').getPublicUrl(storagePath);
+    const inserted = await this.client.from('media').insert({ owner_id: user.user.id, storage_path: storagePath, url: publicUrl.publicUrl, media_type: mediaType, alt_text: altText }).select().single();
+    if (inserted.error || !inserted.data) return { data: null, error: inserted.error };
+    return { data: mapMedia(inserted.data), error: null };
   }
 
   async deleteOwnPost(postId: string) {
@@ -144,6 +187,16 @@ export class MediaRepository {
   async bookmark(postId: string) {
     const { data: user } = await this.client.auth.getUser();
     return this.client.from('bookmarks').upsert({ user_id: user.user?.id, post_id: postId }, { onConflict: 'user_id,post_id' });
+  }
+
+  async unbookmark(postId: string) {
+    const { data: user } = await this.client.auth.getUser();
+    return this.client.from('bookmarks').delete().eq('user_id', user.user?.id).eq('post_id', postId);
+  }
+
+  async getBookmarks(): Promise<Post[]> {
+    const { data } = await this.client.from('bookmark_feed').select('*').order('created_at', { ascending: false }).limit(50);
+    return (data ?? []).map(mapPostFeedRow);
   }
 
   async follow(profileId: string) {
@@ -235,11 +288,18 @@ export class MediaRepository {
 }
 
 function mapProfile(row: any): Profile {
-  return { id: row.id, username: row.username, displayName: row.display_name, avatarUrl: row.avatar_url, bannerUrl: row.banner_url, bio: row.bio, verified: row.verified, followersCount: row.followers_count ?? 0, followingCount: row.following_count ?? 0, postsCount: row.posts_count ?? 0 };
+  return { id: row.id, username: row.username, displayName: row.display_name, avatarUrl: row.avatar_url, bannerUrl: row.banner_url, bio: row.bio, location: row.location, website: row.website, role: row.role ?? 'user', verified: row.verified, followersCount: row.followers_count ?? 0, followingCount: row.following_count ?? 0, postsCount: row.posts_count ?? 0 };
+}
+
+function mapMedia(row: any): MediaAsset {
+  return { id: row.id, ownerId: row.owner_id, url: row.url, type: row.media_type, altText: row.alt_text, width: row.width, height: row.height, durationSeconds: row.duration_seconds };
 }
 
 function mapPostFeedRow(row: any): Post {
-  return { id: row.id, author: mapProfile({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url, banner_url: row.banner_url, bio: row.bio, verified: row.verified, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count }), type: row.post_type, body: row.body, media: row.media ?? [], visibility: row.visibility, createdAt: row.created_at, likeCount: row.like_count ?? 0, commentCount: row.comment_count ?? 0, repostCount: row.repost_count ?? 0, bookmarkCount: row.bookmark_count ?? 0, moderationStatus: row.moderation_status };
+  const media = (row.media ?? []).map((item: any) => item.type ? item : { id: item.id, ownerId: item.owner_id, url: item.url, type: item.media_type, altText: item.alt_text });
+  const hasImage = media.some((item: MediaAsset) => item.type === 'image');
+  const hasVideo = media.some((item: MediaAsset) => item.type === 'video');
+  return { id: row.id, author: mapProfile({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url, banner_url: row.banner_url, bio: row.bio, verified: row.verified, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count }), type: hasImage && hasVideo ? 'mixed' : row.post_type, body: row.body, media, visibility: row.visibility, createdAt: row.created_at, likeCount: row.like_count ?? 0, commentCount: row.comment_count ?? 0, repostCount: row.repost_count ?? 0, bookmarkCount: row.bookmark_count ?? 0, moderationStatus: row.moderation_status };
 }
 
 function mapStoryFeedRow(row: any): Story {
