@@ -2,7 +2,7 @@
   "name": "@media/mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "node_modules/expo/AppEntry.js",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "ios": "expo run:ios",
@@ -18,7 +18,6 @@
     "@react-navigation/native": "^6.1.18",
     "@supabase/supabase-js": "^2.45.4",
     "expo": "^51.0.20",
-    "expo-camera": "^15.0.14",
     "expo-image-picker": "^15.0.7",
     "expo-notifications": "^0.28.13",
     "expo-status-bar": "^1.12.1",

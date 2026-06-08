@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Conversation, FeedBundle, MediaAsset, Message, Notification, Post, Profile, Report, Story, SupportTicket } from '@media/types';
+import type { Conversation, DashboardMetrics, FeedBundle, MediaAsset, Message, ModerationQueueItem, Notification, Post, Profile, Report, SponsoredPost, Story, SupportTicket } from '@media/types';
 
 export interface MediaApiConfig {
   supabaseUrl: string;
@@ -34,20 +34,35 @@ export interface ProfileUpdateInput {
 export class MediaRepository {
   constructor(private readonly client: any) {}
 
+  async isUsernameAvailable(username: string): Promise<boolean> {
+    const normalized = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,30}$/.test(normalized)) return false;
+    const { data } = await this.client.from('profiles').select('id').eq('username', normalized).maybeSingle();
+    return !data;
+  }
+
   signUp(input: SignUpInput) {
+    const username = input.username.trim().toLowerCase();
+    if (!input.email.trim() || !input.email.includes('@')) return Promise.resolve({ data: null, error: { message: 'Enter a valid email address.' } });
+    if (input.password.length < 6) return Promise.resolve({ data: null, error: { message: 'Password must be at least 6 characters.' } });
+    if (!/^[a-z0-9_]{3,30}$/.test(username)) return Promise.resolve({ data: null, error: { message: 'Username must be 3–30 letters, numbers, or underscores.' } });
+    if (input.displayName.trim().length < 2) return Promise.resolve({ data: null, error: { message: 'Enter a display name.' } });
     return this.client.auth.signUp({
-      email: input.email,
+      email: input.email.trim(),
       password: input.password,
-      options: { data: { username: input.username, display_name: input.displayName } }
+      options: { data: { username, display_name: input.displayName.trim() } }
     });
   }
 
   signIn(email: string, password: string) {
-    return this.client.auth.signInWithPassword({ email, password });
+    if (!email.trim() || !email.includes('@')) return Promise.resolve({ data: null, error: { message: 'Enter a valid email address.' } });
+    if (!password) return Promise.resolve({ data: null, error: { message: 'Enter your password.' } });
+    return this.client.auth.signInWithPassword({ email: email.trim(), password });
   }
 
   resetPassword(email: string, redirectTo?: string) {
-    return this.client.auth.resetPasswordForEmail(email, { redirectTo });
+    if (!email.trim() || !email.includes('@')) return Promise.resolve({ data: null, error: { message: 'Enter a valid email address.' } });
+    return this.client.auth.resetPasswordForEmail(email.trim(), { redirectTo });
   }
 
   signOut() {
@@ -96,15 +111,16 @@ export class MediaRepository {
 
   async updateProfile(input: ProfileUpdateInput) {
     const { data: user } = await this.client.auth.getUser();
-    return this.client.from('profiles').update({
-      username: input.username,
-      display_name: input.displayName,
-      avatar_url: input.avatarUrl,
-      banner_url: input.bannerUrl,
-      bio: input.bio,
-      location: input.location,
-      website: input.website
-    }).eq('id', user.user?.id).select().single();
+    if (!user.user) return { data: null, error: { message: 'Log in to update your profile.' } };
+    const update: Record<string, string> = {};
+    if (input.username !== undefined) update.username = input.username.trim().toLowerCase();
+    if (input.displayName !== undefined) update.display_name = input.displayName.trim();
+    if (input.avatarUrl !== undefined) update.avatar_url = input.avatarUrl.trim();
+    if (input.bannerUrl !== undefined) update.banner_url = input.bannerUrl.trim();
+    if (input.bio !== undefined) update.bio = input.bio.trim();
+    if (input.location !== undefined) update.location = input.location.trim();
+    if (input.website !== undefined) update.website = input.website.trim();
+    return this.client.from('profiles').update(update).eq('id', user.user.id).select().single();
   }
 
   async getHomeFeed(): Promise<FeedBundle> {
@@ -121,6 +137,23 @@ export class MediaRepository {
     };
   }
 
+
+  async getFollowingFeed(): Promise<Post[]> {
+    const { data: user } = await this.client.auth.getUser();
+    if (!user.user) return [];
+    const { data } = await this.client
+      .from('following_feed')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    return (data ?? []).map(mapPostFeedRow);
+  }
+
+  async getSuggestedProfiles(): Promise<Profile[]> {
+    const { data } = await this.client.from('profiles').select('*').order('followers_count', { ascending: false }).limit(5);
+    return (data ?? []).map(mapProfile);
+  }
+
   async getProfileFeed(profileId: string): Promise<Post[]> {
     const { data } = await this.client.from('post_feed').select('*').eq('author_id', profileId).order('created_at', { ascending: false });
     return (data ?? []).map(mapPostFeedRow);
@@ -128,9 +161,11 @@ export class MediaRepository {
 
   async createPost(input: { body: string; mediaIds?: string[]; quotePostId?: string; mediaType?: 'image' | 'video' | 'mixed' }) {
     const { data: user } = await this.client.auth.getUser();
+    if (!user.user) return { data: null, error: { message: 'Log in to create posts.' } };
+    if (!input.body.trim() && !input.mediaIds?.length) return { data: null, error: { message: 'Write text or attach media before posting.' } };
     const { data, error } = await this.client.from('posts').insert({
-      author_id: user.user?.id,
-      body: input.body,
+      author_id: user.user.id,
+      body: input.body.trim(),
       quote_post_id: input.quotePostId,
       post_type: input.quotePostId ? 'quote' : input.mediaIds?.length ? input.mediaType ?? 'image' : 'text',
       moderation_status: 'pending'
@@ -176,12 +211,21 @@ export class MediaRepository {
 
   async commentOnPost(postId: string, body: string) {
     const { data: user } = await this.client.auth.getUser();
-    return this.client.from('comments').insert({ post_id: postId, author_id: user.user?.id, body });
+    if (!user.user) return { data: null, error: { message: 'Log in to reply.' } };
+    if (!body.trim()) return { data: null, error: { message: 'Write a reply before posting.' } };
+    return this.client.from('comments').insert({ post_id: postId, author_id: user.user.id, body: body.trim() });
   }
 
   async repost(postId: string, quotePostId?: string) {
     const { data: user } = await this.client.auth.getUser();
-    return this.client.from('reposts').upsert({ user_id: user.user?.id, post_id: postId, quote_post_id: quotePostId }, { onConflict: 'user_id,post_id' });
+    if (!user.user) return { data: null, error: { message: 'Log in to repost.' } };
+    return this.client.from('reposts').upsert({ user_id: user.user.id, post_id: postId, quote_post_id: quotePostId }, { onConflict: 'user_id,post_id' });
+  }
+
+  async unrepost(postId: string) {
+    const { data: user } = await this.client.auth.getUser();
+    if (!user.user) return { data: null, error: { message: 'Log in to remove reposts.' } };
+    return this.client.from('reposts').delete().eq('user_id', user.user.id).eq('post_id', postId);
   }
 
   async bookmark(postId: string) {
@@ -199,14 +243,24 @@ export class MediaRepository {
     return (data ?? []).map(mapPostFeedRow);
   }
 
+  async isFollowing(profileId: string): Promise<boolean> {
+    const { data: user } = await this.client.auth.getUser();
+    if (!user.user || user.user.id === profileId) return false;
+    const { data } = await this.client.from('follows').select('follower_id').eq('follower_id', user.user.id).eq('following_id', profileId).maybeSingle();
+    return Boolean(data);
+  }
+
   async follow(profileId: string) {
     const { data: user } = await this.client.auth.getUser();
-    return this.client.from('follows').insert({ follower_id: user.user?.id, following_id: profileId });
+    if (!user.user) return { data: null, error: { message: 'Log in to follow people.' } };
+    if (user.user.id === profileId) return { data: null, error: { message: 'You cannot follow yourself.' } };
+    return this.client.from('follows').upsert({ follower_id: user.user.id, following_id: profileId }, { onConflict: 'follower_id,following_id' });
   }
 
   async unfollow(profileId: string) {
     const { data: user } = await this.client.auth.getUser();
-    return this.client.from('follows').delete().eq('follower_id', user.user?.id).eq('following_id', profileId);
+    if (!user.user) return { data: null, error: { message: 'Log in to unfollow people.' } };
+    return this.client.from('follows').delete().eq('follower_id', user.user.id).eq('following_id', profileId);
   }
 
   async createStory(input: { mediaId: string; caption?: string }) {
@@ -217,6 +271,33 @@ export class MediaRepository {
   async viewStory(storyId: string) {
     const { data: user } = await this.client.auth.getUser();
     return this.client.from('story_views').upsert({ story_id: storyId, viewer_id: user.user?.id }, { onConflict: 'story_id,viewer_id' });
+  }
+
+
+  async getModerationQueue(): Promise<ModerationQueueItem[]> {
+    const { data } = await this.client.from('moderation_queue').select('*').order('created_at', { ascending: false }).limit(100);
+    return (data ?? []).map(mapModerationQueueItem);
+  }
+
+  async reviewModerationItem(id: string, status: 'approved' | 'rejected' | 'escalated') {
+    return this.client.from('moderation_queue').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id);
+  }
+
+  async getSupportTickets(): Promise<SupportTicket[]> {
+    const { data } = await this.client.from('support_tickets').select('*').order('created_at', { ascending: false }).limit(100);
+    return (data ?? []).map(mapSupportTicket);
+  }
+
+  async getDashboardMetrics(): Promise<DashboardMetrics> {
+    const { data, error } = await this.client.rpc('get_admin_dashboard_metrics');
+    if (error || !data) return { openReports: 0, activeBans: 0, pendingModeration: 0, activeAds: 0 };
+    const row = Array.isArray(data) ? data[0] : data;
+    return { openReports: row.open_reports ?? 0, activeBans: row.active_bans ?? 0, pendingModeration: row.pending_moderation ?? 0, activeAds: row.active_ads ?? 0 };
+  }
+
+  async getSponsoredPosts(): Promise<SponsoredPost[]> {
+    const { data } = await this.client.from('sponsored_posts').select('*').order('created_at', { ascending: false }).limit(100);
+    return (data ?? []).map(mapSponsoredPost);
   }
 
   async getConversations(): Promise<Conversation[]> {
@@ -260,8 +341,9 @@ export class MediaRepository {
     return (data ?? []).map(mapNotification);
   }
 
-  report(input: Omit<Report, 'id' | 'createdAt' | 'status'>) {
-    return this.client.from('reports').insert({ reporter_id: input.reporterId, target_type: input.targetType, target_id: input.targetId, reason: input.reason });
+  async report(input: Partial<Omit<Report, 'id' | 'createdAt' | 'status'>> & Pick<Report, 'targetType' | 'targetId' | 'reason'>) {
+    const { data: user } = await this.client.auth.getUser();
+    return this.client.from('reports').insert({ reporter_id: input.reporterId ?? user.user?.id, target_type: input.targetType, target_id: input.targetId, reason: input.reason });
   }
 
   async blockUser(blockedId: string) {
@@ -288,7 +370,7 @@ export class MediaRepository {
 }
 
 function mapProfile(row: any): Profile {
-  return { id: row.id, username: row.username, displayName: row.display_name, avatarUrl: row.avatar_url, bannerUrl: row.banner_url, bio: row.bio, location: row.location, website: row.website, role: row.role ?? 'user', verified: row.verified, followersCount: row.followers_count ?? 0, followingCount: row.following_count ?? 0, postsCount: row.posts_count ?? 0 };
+  return { id: row.id, username: row.username, displayName: row.display_name, avatarUrl: row.avatar_url, bannerUrl: row.banner_url, bio: row.bio, location: row.location, website: row.website, role: row.role ?? 'user', verified: row.verified, followersCount: row.followers_count ?? 0, followingCount: row.following_count ?? 0, postsCount: row.posts_count ?? 0, usernameLastChangedAt: row.username_last_changed_at ?? undefined };
 }
 
 function mapMedia(row: any): MediaAsset {
@@ -299,7 +381,7 @@ function mapPostFeedRow(row: any): Post {
   const media = (row.media ?? []).map((item: any) => item.type ? item : { id: item.id, ownerId: item.owner_id, url: item.url, type: item.media_type, altText: item.alt_text });
   const hasImage = media.some((item: MediaAsset) => item.type === 'image');
   const hasVideo = media.some((item: MediaAsset) => item.type === 'video');
-  return { id: row.id, author: mapProfile({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url, banner_url: row.banner_url, bio: row.bio, verified: row.verified, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count }), type: hasImage && hasVideo ? 'mixed' : row.post_type, body: row.body, media, visibility: row.visibility, createdAt: row.created_at, likeCount: row.like_count ?? 0, commentCount: row.comment_count ?? 0, repostCount: row.repost_count ?? 0, bookmarkCount: row.bookmark_count ?? 0, moderationStatus: row.moderation_status };
+  return { id: row.id, author: mapProfile({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url, banner_url: row.banner_url, bio: row.bio, verified: row.verified, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, username_last_changed_at: row.username_last_changed_at }), type: hasImage && hasVideo ? 'mixed' : row.post_type, body: row.body, media, visibility: row.visibility, createdAt: row.created_at, likeCount: row.like_count ?? 0, commentCount: row.comment_count ?? 0, repostCount: row.repost_count ?? 0, bookmarkCount: row.bookmark_count ?? 0, moderationStatus: row.moderation_status, likedByMe: Boolean(row.liked_by_me), repostedByMe: Boolean(row.reposted_by_me) };
 }
 
 function mapStoryFeedRow(row: any): Story {
@@ -312,4 +394,16 @@ function mapConversationRow(row: any): Conversation {
 
 function mapNotification(row: any): Notification {
   return { id: row.id, userId: row.user_id, type: row.type, title: row.title, body: row.body, readAt: row.read_at, createdAt: row.created_at };
+}
+
+function mapModerationQueueItem(row: any): ModerationQueueItem {
+  return { id: row.id, targetType: row.target_type, targetId: row.target_id, status: row.status, aiScore: row.ai_score, aiReason: row.ai_reason, assignedTo: row.assigned_to, createdAt: row.created_at };
+}
+
+function mapSupportTicket(row: any): SupportTicket {
+  return { id: row.id, requesterId: row.requester_id, subject: row.subject, message: row.message, status: row.status, assigneeId: row.assignee_id, createdAt: row.created_at };
+}
+
+function mapSponsoredPost(row: any): SponsoredPost {
+  return { id: row.id, postId: row.post_id, sponsorName: row.sponsor_name, status: row.status, startsAt: row.starts_at, endsAt: row.ends_at, pinned: row.pinned, budgetCents: row.budget_cents ?? 0 };
 }
