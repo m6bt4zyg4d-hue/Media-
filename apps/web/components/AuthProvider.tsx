@@ -29,12 +29,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    mediaRepository.getSession().then(async ({ data }) => {
+    mediaRepository.getSession().then(async ({ data }: { data: { session: Session | null } }) => {
       setSession(data.session);
       if (data.session) await refreshProfile();
       setLoading(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event: string, nextSession: Session | null) => {
       setSession(nextSession);
       if (nextSession) await refreshProfile();
       else setProfile(null);

@@ -12,7 +12,7 @@ export default function App() {
   const [hasSession, setHasSession] = useState(false);
   const protectedTabs: Tab[] = ['Post', 'Stories', 'DMs', 'Alerts', 'Profile', 'Admin'];
   useEffect(() => {
-    mobileRepository.getSession().then(({ data }) => setHasSession(Boolean(data.session)));
+    mobileRepository.getSession().then(({ data }: { data: { session: unknown } }) => setHasSession(Boolean(data.session)));
     const { data } = supabase.auth.onAuthStateChange((_event, session) => setHasSession(Boolean(session)));
     return () => data.subscription.unsubscribe();
   }, []);

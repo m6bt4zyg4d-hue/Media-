@@ -1,6 +1,6 @@
 export type Role = 'owner' | 'admin' | 'moderator' | 'support' | 'user';
 export type Visibility = 'public' | 'followers' | 'private';
-export type PostType = 'text' | 'image' | 'video' | 'quote';
+export type PostType = 'text' | 'image' | 'video' | 'mixed' | 'quote';
 export type MediaType = 'image' | 'video' | 'audio';
 export type ModerationStatus = 'pending' | 'approved' | 'rejected' | 'escalated';
 export type ReportStatus = 'open' | 'reviewing' | 'resolved' | 'dismissed';
@@ -21,6 +21,9 @@ export interface Profile {
   avatarUrl?: string;
   bannerUrl?: string;
   bio?: string;
+  location?: string;
+  website?: string;
+  role?: Role;
   verified: boolean;
   followersCount: number;
   followingCount: number;
@@ -122,7 +125,6 @@ export interface ModerationQueueItem {
   assignedTo?: string;
   createdAt: string;
 }
-
 
 export interface DeviceToken {
   id: string;

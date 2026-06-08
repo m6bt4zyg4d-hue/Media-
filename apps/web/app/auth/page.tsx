@@ -1,6 +1,12 @@
+import { Suspense } from 'react';
 import { AuthForm } from '../../components/AuthForm';
 import { Shell } from '../../components/Shell';
 
 export default function AuthPage() {
-  return <Shell title="Auth"><header className="topbar"><h1>Signup / login</h1><p className="muted">Supabase email/password auth with password reset, persisted sessions, and automatic profile creation.</p></header><AuthForm /></Shell>;
+  return (
+    <Shell title="Sign in">
+      <header className="x-sticky-header"><h1>Sign in to Media</h1><p>Join the conversation.</p></header>
+      <div className="x-auth-frame"><Suspense fallback={<section className="x-card"><p>Loading authentication…</p></section>}><AuthForm /></Suspense></div>
+    </Shell>
+  );
 }

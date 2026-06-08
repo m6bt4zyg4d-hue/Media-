@@ -1,6 +1,13 @@
-import { Composer, PostList, StoryRail } from '../components/Feed';
+import { Composer, PostList, TimelineTabs } from '../components/Feed';
 import { Shell } from '../components/Shell';
 
 export default function HomePage() {
-  return <Shell title="Home"><header className="topbar"><h1>Home</h1><p className="muted">For you · Following · Live</p></header><StoryRail /><Composer /><PostList /></Shell>;
+  return (
+    <Shell title="Home timeline">
+      <header className="x-sticky-header"><h1>Home</h1></header>
+      <TimelineTabs />
+      <Composer />
+      <PostList />
+    </Shell>
+  );
 }

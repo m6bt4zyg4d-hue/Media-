@@ -1,35 +1,102 @@
-import Link from 'next/link';
-import { demoFeed, currentProfile } from '@media/api';
-import { AccountMenu } from './AccountMenu';
+'use client';
 
-export function Shell({ children, title = 'Home' }: { children: React.ReactNode; title?: string }) {
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Bell, Bookmark, CircleEllipsis, Compass, Feather, Home, Mail, Search, Settings, ShieldCheck, User, Users, Wrench, Zap } from 'lucide-react';
+import { currentProfile, demoFeed } from '@media/api';
+import { AccountMenu } from './AccountMenu';
+import { useAuth } from './AuthProvider';
+
+const primaryNav = [
+  { label: 'Home', href: '/', icon: Home },
+  { label: 'Explore', href: '/explore', icon: Search },
+  { label: 'Notifications', href: '/notifications', icon: Bell },
+  { label: 'Messages', href: '/messages', icon: Mail },
+  { label: 'Bookmarks', href: '/bookmarks', icon: Bookmark },
+  { label: 'Profile', href: '/profile', icon: User },
+  { label: 'Settings', href: '/settings', icon: Settings }
+];
+
+const staffNav = [
+  { label: 'Admin', href: '/admin', icon: ShieldCheck, roles: ['owner', 'admin'] },
+  { label: 'Moderation', href: '/moderation', icon: Wrench, roles: ['owner', 'admin', 'moderator'] }
+] as const;
+
+export function Shell({ children, title = 'Timeline' }: { children: React.ReactNode; title?: string }) {
+  const pathname = usePathname();
+  const { profile } = useAuth();
+  const role = profile?.role ?? 'user';
+  const visibleStaffNav = staffNav.filter((item) => item.roles.includes(role as never));
+
   return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="logo"><span className="logo-mark">M</span><span className="logo-text">Media</span></div>
-        <nav className="nav" aria-label="Main navigation">
-          {['Home', 'Explore', 'Notifications', 'Messages', 'Bookmarks', 'Profile', 'Auth'].map((item) => <Link key={item} href={item === 'Home' ? '/' : `/${item.toLowerCase()}`}><span>{iconFor(item)}</span> <span className="nav-label">{item}</span></Link>)}
-          <Link href="/admin"><span>🛡️</span> <span className="nav-label">Admin</span></Link>
-          <Link href="/moderation"><span>⚖️</span> <span className="nav-label">Moderation</span></Link>
-          <Link href="/support"><span>🎧</span> <span className="nav-label">Support</span></Link>
-        </nav>
-        <button className="primary" style={{ width: '100%', marginTop: 20 }}>Post</button><AccountMenu />
-      </aside>
-      <section className="feed" aria-label={title}>{children}</section>
-      <aside className="rightbar">
-        <div className="stack">
-          <input className="search" placeholder="Search Media" />
-          <section className="panel" style={{ borderRadius: 24, border: '1px solid var(--border)' }}>
-            <h2>Trending</h2>
-            {demoFeed.trendingHashtags.map((tag, index) => <p key={tag}><span className="muted">#{index + 1}</span><br /><strong>{tag}</strong></p>)}
-          </section>
-          <section className="panel" style={{ borderRadius: 24, border: '1px solid var(--border)' }}>
-            <h2>Who to follow</h2>
-            <div className="row space"><div className="row"><img className="avatar" src={currentProfile.avatarUrl} alt="" /><div><strong>{currentProfile.displayName}</strong><div className="muted">@{currentProfile.username}</div></div></div><button className="ghost">Follow</button></div>
-          </section>
+    <main className="x-app-shell">
+      <aside className="x-left-rail" aria-label="Primary">
+        <div className="x-left-inner">
+          <Link className="x-logo" href="/" aria-label="Media home"><Zap size={30} /></Link>
+          <nav className="x-nav" aria-label="Main navigation">
+            {primaryNav.map(({ label, href, icon: Icon }) => (
+              <Link key={href} className={pathname === href ? 'is-active' : ''} href={href}>
+                <Icon size={25} strokeWidth={pathname === href ? 2.6 : 2} />
+                <span>{label}</span>
+              </Link>
+            ))}
+            {visibleStaffNav.map(({ label, href, icon: Icon }) => (
+              <Link key={href} className={pathname === href ? 'is-active staff' : 'staff'} href={href}>
+                <Icon size={25} /><span>{label}</span>
+              </Link>
+            ))}
+            <Link href="/support"><CircleEllipsis size={25} /><span>More</span></Link>
+          </nav>
+          <a className="x-post-button" href="/#compose"><Feather size={22} /><span>Post</span></a>
+          <AccountMenu />
         </div>
       </aside>
+
+      <section className="x-main-column" aria-label={title}>{children}</section>
+
+      <aside className="x-right-rail" aria-label="Discovery">
+        <div className="x-right-inner">
+          <label className="x-search"><Search size={19} /><input placeholder="Search" /></label>
+          <section className="x-card x-premium-card">
+            <h2>Subscribe to Premium</h2>
+            <p>Unlock creator tools, longer uploads, prioritized discovery, and deeper analytics.</p>
+            <Link className="x-small-button" href="/settings">Subscribe</Link>
+          </section>
+          <section className="x-card">
+            <h2>What’s happening</h2>
+            {demoFeed.trendingHashtags.slice(0, 5).map((tag, index) => (
+              <Link className="x-trend" key={tag} href={`/explore?q=${encodeURIComponent(tag)}`}>
+                <span>Trending in Media</span>
+                <strong>{tag}</strong>
+                <small>{(128 - index * 17).toLocaleString()}K posts</small>
+              </Link>
+            ))}
+          </section>
+          <section className="x-card">
+            <h2>Who to follow</h2>
+            {[currentProfile, ...demoFeed.posts.map((post) => post.author)].slice(0, 3).map((person) => (
+              <div className="x-follow-row" key={person.id}>
+                <img className="x-avatar" src={person.avatarUrl ?? '/'} alt="" />
+                <div>
+                  <strong>{person.displayName}</strong>
+                  <span>@{person.username}</span>
+                </div>
+                <Link className="x-follow-button" href={`/u/${person.username}`}>Follow</Link>
+              </div>
+            ))}
+          </section>
+          <footer className="x-rail-footer">
+            <Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><Link href="/support">Support</Link>
+          </footer>
+        </div>
+      </aside>
+
+      <nav className="x-mobile-nav" aria-label="Mobile navigation">
+        {primaryNav.slice(0, 5).map(({ label, href, icon: Icon }) => (
+          <Link key={href} className={pathname === href ? 'is-active' : ''} href={href} aria-label={label}><Icon size={24} /></Link>
+        ))}
+      </nav>
+      <a className="x-mobile-compose" href="/#compose" aria-label="Compose post"><Feather size={25} /></a>
     </main>
   );
 }
-function iconFor(item: string) { return ({ Home: '🏠', Explore: '🔎', Notifications: '🔔', Messages: '✉️', Bookmarks: '🔖', Profile: '👤', Auth: '🔐' } as Record<string, string>)[item]; }
