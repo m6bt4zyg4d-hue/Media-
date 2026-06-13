@@ -1,0 +1,42 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "production": {
+      "node": "18.x",
+      "npm": "9.x",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://your-api-url.com"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {}
+    },
+    "preview": {
+      "node": "18.x",
+      "npm": "9.x",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {}
+    },
+    "ios-simulator": {
+      "ios": {
+        "simulator": true
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "thomasntogba@icloud.com",
+        "appleTeamId": "",
+        "appleIdPassword": "@env:APPLE_ID_PASSWORD",
+        "ascAppId": "",
+        "appleIdITC": true
+      }
+    }
+  }
+}
