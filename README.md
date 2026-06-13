@@ -1,21 +1,22 @@
-# Media
+# OpenDev
 
-Media is a full-stack social media platform monorepo for iOS, Android, desktop web, and Supabase. It includes a working Supabase Auth foundation, cross-platform social screens, shared strict TypeScript packages, and a production-oriented database schema for feeds, stories, DMs, notifications, safety, support, and moderation.
+OpenDev is a full-stack AI software development platform monorepo for iOS, Android, desktop web, and Supabase. The codebase is now framed around project creation, AI agents, OpenDev Studio, hosting, deployment, billing, and app-store publishing instead of the previous social-media product surface.
 
 ## Workspace layout
 
-- `apps/mobile` — Expo React Native app for iOS and Android with persisted Supabase sessions, protected mobile tabs, feed, stories, DMs, notifications, profile, support, and moderation surfaces.
-- `apps/web` — Next.js responsive desktop/web app with protected routes, X-like sidebar/feed/trending layout, auth, public profiles, edit profile, dashboards, DMs, notifications, safety flows, and legal/delete-account pages.
+- `apps/mobile` — Expo React Native companion app for OpenDev dashboards, project wizard, Studio, AI agents, deployment, and billing surfaces.
+- `apps/web` — Next.js desktop/web OpenDev dashboard with project creation, Studio IDE preview, AI agents, hosting, publishing, collaboration, security, and billing sections.
 - `packages/types` — Shared TypeScript domain and database-facing types.
 - `packages/api` — Shared Supabase repository plus production integration adapters for live streaming, push/email delivery, and AI moderation services.
 - `packages/design-system` — Shared dark-mode-ready color, spacing, radius, typography, shadow, and button tokens.
-- `supabase/schema.sql` — Postgres schema, Auth signup trigger, views, relationships, indexes, triggers, RLS enablement, policies, storage setup, auto-moderation triggers, advertising tables, and operational views.
+- `supabase/schema.sql` — Current Postgres schema retained for auth, accounts, content/assets, notifications, support, moderation, operational views, and storage while OpenDev-specific product tables are iterated.
 
 ## Requirements
 
 - Node.js 20+
 - npm 10+
 - Expo CLI through `npx expo`
+- EAS CLI for iOS cloud builds and App Store submission
 - A Supabase project or local Supabase CLI stack
 
 ## Environment setup
@@ -37,16 +38,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ## Database setup
 
-Apply `supabase/schema.sql` in the Supabase SQL editor or with the Supabase CLI. The schema includes:
-
-- Email/password auth profile auto-creation via `public.handle_new_auth_user()`.
-- Profiles with avatar, banner, bio, username, display name, verification, and follower/following/post counters.
-- Posts, media, comments, likes, reposts, quote posts, bookmarks, follows, feeds, and trending hashtags.
-- Stories with 24-hour expiration and story views.
-- 1-on-1/group conversations, messages, read receipts, and typing indicators.
-- In-app notifications and device tokens for Expo/APNS/FCM delivery adapters.
-- Reports, blocks, mutes, support tickets, appeals, bans, admin actions, and moderation queue.
-- RLS policies for users, content owners, conversation members, ticket participants, and staff roles.
+Apply `supabase/schema.sql` in the Supabase SQL editor or with the Supabase CLI while the OpenDev-specific schema is finalized.
 
 ```bash
 supabase db push
@@ -59,22 +51,35 @@ npm run dev:web
 npm run dev:mobile
 ```
 
-The web app runs with protected Next.js routes and client-side Supabase session awareness. The mobile app persists sessions using AsyncStorage and gates protected tabs until login.
+The web app runs the OpenDev desktop dashboard. The mobile app runs a native OpenDev companion experience with Dashboard, Studio, Agents, Deploy, and Billing tabs.
+
+## Building
+
+```bash
+npm run build:desktop
+npm run build:ios
+npm run build:ios:preview
+npm run build:ios:simulator
+npm run submit:ios
+```
+
+The iOS build and submit commands require EAS CLI access, an Expo account, Apple Developer credentials, and App Store Connect setup. See `docs/APPLE_STORE_CONNECT.md` for the OpenDev connection workflow.
 
 ## External integration TODOs
 
 External provider adapters are configured through environment variables:
 
-- `MEDIA_LIVE_STREAM_WEBHOOK_URL` for live stream provisioning.
-- `MEDIA_AI_MODERATION_URL` for managed AI moderation, with a Supabase heuristic fallback.
-- `MEDIA_PUSH_WEBHOOK_URL` and `MEDIA_EMAIL_WEBHOOK_URL` for push and transactional email delivery.
-- Add payment/subscription providers only if Media introduces paid creator or premium features.
+- `OPENDEV_LIVE_STREAM_WEBHOOK_URL` for live stream or preview provisioning.
+- `OPENDEV_AI_MODERATION_URL` for managed AI moderation, with a Supabase heuristic fallback.
+- `OPENDEV_PUSH_WEBHOOK_URL` and `OPENDEV_EMAIL_WEBHOOK_URL` for push and transactional email delivery.
+- Add payment/subscription providers when OpenDev introduces paid AI, hosting, or premium features.
 
 ## Useful commands
 
 ```bash
 npm run typecheck
 npm run lint
+npm run build:desktop
 npm --workspace apps/web run dev
 npm --workspace apps/mobile run start
 ```
